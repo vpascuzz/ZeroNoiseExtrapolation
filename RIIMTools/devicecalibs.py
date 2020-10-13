@@ -106,7 +106,6 @@ def get_device_props(device_name):
   import datetime
   timezone = datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo
   date = full_properties.last_update_date.strftime('%Y%m%d')
-  # str_date = str(date) + '.' + timezone
   csv_name = device_name + '.' + str(date) + '.devcalib'
   df.to_csv(csv_name, index = False, header = True)
   return df
