@@ -4,7 +4,7 @@
   showing qubit connectivity, etc.
 """
 import pandas as pd
-from qiskit import IBMQ
+from qiskit import IBMQ, providers
 account = IBMQ.load_account()
 
 # List of valid devices (as of 2020-10-13)
@@ -12,13 +12,14 @@ list_devices = ['ibmq_essex','ibmq_london','ibmq_ourense',\
   'ibmq_rome', 'ibmq_valencia']
 # List of headings for csv output
 out_csv_headings = ['Qubit', 'T1 [us]', 'T2 [us]', 'Frequency [GHz]', \
-  'Readout error', 'Single-qubit U2 error rate', 'CNOT error rate']
+  'Readout error', 'Single-qubit U2 error rate', 'CNOT error rate', \
+  'Last update date']
 # Dictionary for access to qubit properties of interest (map from Qiskit)
-dict_props_qubit = {0: 'T1 [us]', 1: 'T2 [us]', 2: 'Frequency [GHz]', \
+dict_props_device_qubit = {0: 'T1 [us]', 1: 'T2 [us]', 2: 'Frequency [GHz]', \
   4: 'Readout error'}
 
 
-def get_device_props(device_name):
+def get_device_props(backend_name, csv_name=None):
   """Get device properties.
 
   Device properties are retrieved as per out_csv_headings. The properties are
@@ -30,31 +31,42 @@ def get_device_props(device_name):
           Single-qubit U2 error date, CNOT error rate
 
   Each of the keys has a one-to-one map key-to-value, with the exception of
-  'CNOT error rate'. The 'CNOT error rate' key maps each (control) qubit to a
-  list of its CNOT-connected (target) qubits via dictionaries, e.g.
+  'CNOT error rate'. The 'CNOT error rate' key value is a list of maps from each
+  (control) qubit to its CNOT-connected (target) qubits via dictionaries, e.g.
 
     print(out_dict_props_gates['CNOT error rate'][1])
 
   prints the list of qubit 1 CNOT connections.
 
   Args:
-    device_name (str): Name of the device to query.
- 
+    backend_name (str): Name of the backend to query.
+
   Returns:
     DataFrame containing device calibration data.
+
+  Raises:
+    QiskitBackendNotFoundError: If backend is not valid.
   """
   provider = IBMQ.get_provider(group='open')
-  device = provider.get_backend(device_name)
+  ibmq_backends_avail = provider.backends()[2:]
+  list_backends_avail_names = [be.name() for be in ibmq_backends_avail]
+  if backend_name not in list_backends_avail_names:
+    raise providers.exceptions.QiskitBackendNotFoundError(
+      '\'backend_name\' must be one of: ', \
+        ', '.join(list_backends_avail_names))
 
+  the_backend = provider.get_backend(backend_name)
   # Pull IBMQ device properties
-  full_properties = device.properties()
-  props_dict = device.properties().to_dict()
+  full_properties = the_backend.properties()
+  props_dict = the_backend.properties().to_dict()
+  last_update_date = full_properties.last_update_date
 
   # Qubit properties from device
   props_qubits = props_dict['qubits']
   # Qubit dictionary of properties for output
-  out_dict_props_qubits = {'Qubit': [], 'T1 [us]': [], 'T2 [us]': [], \
+  dict_props_qubit = {'Qubit': [], 'T1 [us]': [], 'T2 [us]': [], \
     'Frequency [GHz]': [], 'Readout error': []}
+  dict_update_date = {'Last update date': []}
   # Loop over the number of qubits
   for q in range(0, len(props_qubits)):
     # The current qubit
@@ -62,20 +74,22 @@ def get_device_props(device_name):
     # Current qubit name
     this_qubit_name = 'Q' + str(q)
     # Add the qubit name to the 'Qubit' column of output
-    out_dict_props_qubits['Qubit'].append(this_qubit_name)
+    dict_props_qubit['Qubit'].append(this_qubit_name)
+    # Add the last update date
+    dict_update_date['Last update date'].append(last_update_date)
     # Loop over the properties of interest
-    for i in dict_props_qubit:
+    for i in dict_props_device_qubit:
       # Property name (key)
-      prop_name = dict_props_qubit[i]
+      prop_name = dict_props_device_qubit[i]
       # Value of the property
       prop_value =  this_qubit[i]['value']
       # Add property value to the corresponding key of output
-      out_dict_props_qubits[prop_name].append(prop_value)
+      dict_props_qubit[prop_name].append(prop_value)
 
   # Gate properties
   props_gates = props_dict['gates']
   # Gate dictionary of properties for output
-  out_dict_props_gates = {'Single-qubit U2 error rate': [], \
+  dict_props_gates = {'Single-qubit U2 error rate': [], \
     'CNOT error rate': []}
   # List of U2 gates
   list_u2_gates = []
@@ -109,18 +123,17 @@ def get_device_props(device_name):
         list_cx_gates[ctl].append(dict_this_gate)
   
   # Assign output dict to the lists constructed above
-  out_dict_props_gates['Single-qubit U2 error rate'] = list_u2_gates
-  out_dict_props_gates['CNOT error rate'] = list_cx_gates
+  dict_props_gates['Single-qubit U2 error rate'] = list_u2_gates
+  dict_props_gates['CNOT error rate'] = list_cx_gates
 
   # Combine qubit and gate dicts
-  output_data = {**out_dict_props_qubits, **out_dict_props_gates}
+  output_data = {**dict_props_qubit, **dict_props_gates, **dict_update_date}
 
   # Create a DataFrame
   df = pd.DataFrame(output_data, columns = out_csv_headings)
+
   # Write to csv: get date and format output name
-  import datetime
-  timezone = datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo
-  date = full_properties.last_update_date.strftime('%Y%m%d')
-  csv_name = device_name + '.' + str(date) + '.devcalib'
+  if csv_name is None:
+    csv_name = backend_name + '.devcalib'
   df.to_csv(csv_name, index = False, header = True)
   return df
