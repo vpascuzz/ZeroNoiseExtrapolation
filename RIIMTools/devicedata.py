@@ -7,11 +7,6 @@ import pandas as pd
 from qiskit import IBMQ, providers
 account = IBMQ.load_account()
 
-# Dictionary for access to qubit properties of interest (map from Qiskit)
-dict_props_device_qubit = {0: 'T1 [us]', 1: 'T2 [us]', 2: 'Frequency [GHz]', \
-  4: 'Readout error'}
-
-
 def get_device_props(backend_name):
   """Get device properties.
 
@@ -53,6 +48,9 @@ def get_device_props(backend_name):
   full_properties = the_backend.properties()
   props_dict = the_backend.properties().to_dict()
   last_update_date = full_properties.last_update_date
+  # Dictionary for access to qubit properties of interest (map from Qiskit)
+  dict_props_device_qubit = {0: 'T1 [us]', 1: 'T2 [us]', 2: 'Frequency [GHz]', \
+    4: 'Readout error'}
 
   # Qubit properties from device
   props_qubits = props_dict['qubits']
@@ -176,10 +174,47 @@ def get_cx_connected_qubits(df, ctl):
   # Get the cx column data
   cx_data = df['CNOT error rate'][ctl]
   # Loop over list of dictionaries
-  for dict in cx_data:
+  for d in cx_data:
     # Get the key
-    for key, _ in dict.items():
+    for key, _ in d.items():
       # Parse key to get connected qubit. Assume key of the form 'cxCTL_TGT'
       connected_qubits.append('Q' + key.split('_')[1])
 
   return connected_qubits
+
+
+def get_cx_error_rate(df, ctl, tgt):
+  """ Gets the cx/CNOT error rate between two qubits.
+
+  Given a control (ctl) and target (tgt) qubit, the error rate of the cx/CNOT
+  gate connecting them is retrieved from a DataFrame with device properties.
+  Note that the cx/CNOT is not necessarily symmetric; the error rate between
+  q1 (ctl) and q2 (tgt) is not in general the same as q2 (ctl) and q1 (tgt), so
+  this method needs to be called for each pair (ctl, tgt).
+
+  Args:
+    ctl: Index of the control qubit.
+    tgt: Index of the target qubit.
+
+  Returns:
+    Error rate of the cx/CNOT gate connecting ctl and tgt.
+
+  Raises:
+    Exception if ctl and tgt are the same qubit index, or ctl and tgt are not
+    cx/CNOT-connected.
+  """
+  # Sanity check: ensure ctl and tgt are distinct
+  if ctl == tgt:
+    raise Exception('ctl and tgt must be distinct qubits.')
+  tgt_name = 'Q' + str(tgt)
+  # Sanity check: ensure ctl and tgt are connected via cx/CNOT
+  if tgt_name not in get_cx_connected_qubits(df, 1):
+    raise Exception('ctl and tgt are not connected via a cx/CNOT gate.')
+  # Construct gate name from ctl and tgt
+  gate_name = 'cx' + str(ctl) + '_' + str(tgt)
+  # Get relevant row and column from DataFrame
+  cx_data = df['CNOT error rate'][ctl]
+  # Get the error rate. N.B. this is not efficient.
+  for d in cx_data:
+    if gate_name in d.keys():
+      return d[gate_name]
