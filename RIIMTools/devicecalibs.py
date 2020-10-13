@@ -1,7 +1,9 @@
 """Helper tools to get device-specific information.
+
+  TODO: Implement additional functions to access individual properties,
+  showing qubit connectivity, etc.
 """
 import pandas as pd
-import numpy as np
 from qiskit import IBMQ
 account = IBMQ.load_account()
 
@@ -22,9 +24,22 @@ def get_device_props(device_name):
   Device properties are retrieved as per out_csv_headings. The properties are
   written to a csv file. Valid devices are given in list_devices.
 
+  The output csv/DataFrame is laid out in a dictionary format:
+
+    Keys: Qubit, T1 [us], T2 [us], Frequency [GHz], Readout error, \
+          Single-qubit U2 error date, CNOT error rate
+
+  Each of the keys has a one-to-one map key-to-value, with the exception of
+  'CNOT error rate'. The 'CNOT error rate' key maps each (control) qubit to a
+  list of its CNOT-connected (target) qubits via dictionaries, e.g.
+
+    print(out_dict_props_gates['CNOT error rate'][1])
+
+  prints the list of qubit 1 CNOT connections.
+
   Args:
     device_name (str): Name of the device to query.
-  
+ 
   Returns:
     DataFrame containing device calibration data.
   """
