@@ -7,23 +7,16 @@ import pandas as pd
 from qiskit import IBMQ, providers
 account = IBMQ.load_account()
 
-# List of valid devices (as of 2020-10-13)
-list_devices = ['ibmq_essex','ibmq_london','ibmq_ourense',\
-  'ibmq_rome', 'ibmq_valencia']
-# List of headings for csv output
-out_csv_headings = ['Qubit', 'T1 [us]', 'T2 [us]', 'Frequency [GHz]', \
-  'Readout error', 'Single-qubit U2 error rate', 'CNOT error rate', \
-  'Last update date']
 # Dictionary for access to qubit properties of interest (map from Qiskit)
 dict_props_device_qubit = {0: 'T1 [us]', 1: 'T2 [us]', 2: 'Frequency [GHz]', \
   4: 'Readout error'}
 
 
-def get_device_props(backend_name, csv_name=None):
+def get_device_props(backend_name):
   """Get device properties.
 
-  Device properties are retrieved as per out_csv_headings. The properties are
-  written to a csv file. Valid devices are given in list_devices.
+  Device properties are retrieved for each qubit, and U2 and cx gates. The
+  properties are written to a csv file. Valid devices are given in list_devices.
 
   The output csv/DataFrame is laid out in a dictionary format:
 
@@ -42,7 +35,7 @@ def get_device_props(backend_name, csv_name=None):
     backend_name (str): Name of the backend to query.
 
   Returns:
-    DataFrame containing device calibration data.
+    Dictionary containing device calibration data.
 
   Raises:
     QiskitBackendNotFoundError: If backend is not valid.
@@ -129,11 +122,64 @@ def get_device_props(backend_name, csv_name=None):
   # Combine qubit and gate dicts
   output_data = {**dict_props_qubit, **dict_props_gates, **dict_update_date}
 
-  # Create a DataFrame
-  df = pd.DataFrame(output_data, columns = out_csv_headings)
+  return output_data
 
-  # Write to csv: get date and format output name
-  if csv_name is None:
-    csv_name = backend_name + '.devcalib'
-  df.to_csv(csv_name, index = False, header = True)
+
+def write_device_props_csv(dict_data, output_csv_name=None):
+  """Write device (qubit and gate) data to a csv file.
+
+  The dictionary contains keys:
+    Qubit, T1 [us], T2 [us], Frequency [GHz], Readout error,
+    Single-qubit U2 error rate, CNOT error rate, Last update date
+
+  that are used as the csv column headers.
+
+  Args:
+    dict_data (dictionary): Dictionary of data, adhering to the format given in
+               get_device_props, to write to file.
+    output_csv_name (str): Name of output file.
+
+  Returns:
+    Device properties in a DataFrame object.
+  """
+  # List of headings for csv output
+  out_csv_headings = ['Qubit', 'T1 [us]', 'T2 [us]', 'Frequency [GHz]', \
+    'Readout error', 'Single-qubit U2 error rate', 'CNOT error rate', \
+    'Last update date']
+
+  # Create a DataFrame
+  df = pd.DataFrame(dict_data, columns = out_csv_headings)
+
+  # Format output name and write csv
+  if output_csv_name is None:
+    output_csv_name = 'device_properties.dat'
+  df.to_csv(output_csv_name, index = False, header = True)
+
   return df
+
+
+def get_cx_connected_qubits(df, ctl):
+  """Retrieves the target qubits from the given control qubit.
+
+  Given a control qubit, a list of connected (control) qubits is returned based
+  on the device data in the provided DataFrame.
+
+  Args:
+    df (DataFrame): Device properties.
+    ctl: Control qubit to return connected (target) qubits from.
+  
+  Returns:
+    List of connected (target) qubits.
+  """
+  # List of qubits to return
+  connected_qubits = []
+  # Get the cx column data
+  cx_data = df['CNOT error rate'][ctl]
+  # Loop over list of dictionaries
+  for dict in cx_data:
+    # Get the key
+    for key, _ in dict.items():
+      # Parse key to get connected qubit. Assume key of the form 'cxCTL_TGT'
+      connected_qubits.append('Q' + key.split('_')[1])
+
+  return connected_qubits
