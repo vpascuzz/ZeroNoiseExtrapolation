@@ -24,6 +24,9 @@ def get_device_props(device_name):
 
   Args:
     device_name (str): Name of the device to query.
+  
+  Returns:
+    DataFrame containing device calibration data.
   """
   provider = IBMQ.get_provider(group='open')
   device = provider.get_backend(device_name)
